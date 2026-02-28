@@ -152,7 +152,7 @@ def run_gui():
                 messagebox.showerror("Error", f"Generation failed: {e}")
 
     root = tk.Tk()
-    app = AudioGeneratorApp(root)
+    AudioGeneratorApp(root)
     root.mainloop()
 
 

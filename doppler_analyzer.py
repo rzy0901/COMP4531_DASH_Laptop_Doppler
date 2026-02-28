@@ -25,7 +25,6 @@ from datetime import datetime
 from signal_processing import (
     DopplerResult,
     analyze_single_tone,
-    SPEED_OF_SOUND
 )
 
 # Audio processing
@@ -42,7 +41,6 @@ from scipy.io import wavfile
 try:
     from dash import Dash, html, dcc, callback, Output, Input, State
     import plotly.graph_objs as go
-    from plotly.subplots import make_subplots
 except ImportError:
     print("Please install dash and plotly: pip install dash plotly")
     raise
