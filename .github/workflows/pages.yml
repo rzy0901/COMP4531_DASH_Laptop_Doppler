@@ -25,20 +25,24 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
           pip install pdoc
 
-      - name: Install project dependencies
-        run: |
-          pip install numpy scipy
-
       - name: Generate API documentation
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pdoc signal_processing generate_audio \
             --docformat numpy \
-            --output-directory docs_build
+            -o docs_build
 
       - name: Create landing page
         run: |
