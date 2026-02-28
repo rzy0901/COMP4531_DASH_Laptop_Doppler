@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doppler Velocity Analyzer — Live Demo</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+  :root { --primary:#2c3e50; --accent:#3498db; --green:#27ae60; --red:#e74c3c;
+           --purple:#9b59b6; --bg:#f5f6fa; --card:#fff; --muted:#7f8c8d; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         background:var(--bg); color:var(--primary); line-height:1.6; }
+  .header { background:#ecf0f1; padding:20px; border-radius:10px; margin-bottom:20px; text-align:center; }
+  .header h1 { color:var(--primary); margin-bottom:4px; }
+  .header p { color:var(--muted); margin:0; }
+  .header .nav { margin-top:10px; }
+  .header .nav a { color:var(--accent); text-decoration:none; margin:0 12px; font-size:0.95em; }
+  .header .nav a:hover { text-decoration:underline; }
+  .main { display:flex; gap:20px; flex-wrap:wrap; }
+  .sidebar { width:280px; flex-shrink:0; }
+  .content { flex:1; min-width:0; }
+  .card { background:var(--card); border-radius:10px; padding:20px;
+          box-shadow:0 2px 5px rgba(0,0,0,.1); margin-bottom:20px; }
+  .card h3 { color:var(--primary); margin:0 0 12px; }
+  .card h4 { color:var(--primary); margin:10px 0 8px; }
+  label { display:block; margin-bottom:4px; font-size:.9em; color:var(--muted); }
+  input[type=number] { width:100%; padding:8px; margin-bottom:10px; border:1px solid #ddd;
+                        border-radius:5px; font-size:1em; }
+  button { border:none; padding:14px 0; font-size:1em; cursor:pointer; border-radius:5px;
+           color:#fff; width:48%; }
+  .btn-start { background:var(--green); }
+  .btn-stop  { background:var(--red); }
+  .btn-record { background:var(--purple); width:100%; margin-bottom:8px; padding:10px; font-size:.9em; }
+  .btn-save   { background:#8e44ad; width:100%; padding:10px; font-size:.9em; }
+  .btn-row { display:flex; gap:4%; }
+  .status-box { margin-top:12px; padding:10px; background:#f8f9fa; border-radius:5px;
+                text-align:center; font-size:.9em; }
+  .velocity-panel { text-align:center; padding:20px; }
+  .velocity-panel h2 { color:var(--muted); font-size:16px; margin-bottom:4px; }
+  .velocity-value { font-size:72px; font-weight:bold; color:var(--primary); }
+  .velocity-unit { font-size:24px; color:var(--muted); }
+  .metrics { display:flex; justify-content:center; gap:30px; padding:10px;
+             border-top:1px solid #ecf0f1; margin-top:8px; }
+  .metrics span.label { color:var(--muted); }
+  .metrics span.val-freq { font-weight:bold; color:var(--accent); }
+  .metrics span.val-str  { font-weight:bold; color:var(--red); }
+  .instructions { margin-top:20px; }
+  .instructions ol { color:var(--muted); padding-left:20px; }
+  .instructions li { margin-bottom:4px; }
+  .browser-note { background:#fff3cd; border:1px solid #ffc107; border-radius:8px;
+                  padding:12px 16px; margin-bottom:20px; font-size:.9em; }
+  @media(max-width:720px) { .main{flex-direction:column;} .sidebar{width:100%;} }
+</style>
+</head>
+<body>
+<div style="padding:20px; min-height:100vh;">
+
+<div class="header">
+  <h1>Doppler Velocity Analyzer</h1>
+  <p>Real-time velocity measurement using audio Doppler effect — running in your browser</p>
+  <div class="nav">
+    <a href="../">Home</a>
+    <a href="../docs/signal_processing.html">signal_processing docs</a>
+    <a href="../docs/generate_audio.html">generate_audio docs</a>
+  </div>
+</div>
+
+<div class="browser-note">
+  <strong>Browser-based demo:</strong> This uses the Web Audio API to access your microphone and
+  performs FFT analysis directly in JavaScript. No server required — everything runs locally in your browser.
+  Works best in Chrome/Edge. You must allow microphone access when prompted.
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="card">
+      <h3>Signal Configuration</h3>
+      <label for="center-freq">Center Frequency (Hz):</label>
+      <input type="number" id="center-freq" value="18000" min="1000" max="22000" step="100">
+      <label for="fft-size">FFT Size:</label>
+      <input type="number" id="fft-size" value="8192" min="2048" max="16384" step="2048">
+      <hr style="margin:12px 0;">
+      <div class="btn-row">
+        <button class="btn-start" id="btn-start" onclick="startAnalyzer()">Start</button>
+        <button class="btn-stop" id="btn-stop" onclick="stopAnalyzer()">Stop</button>
+      </div>
+      <div class="status-box" id="status">Status: Stopped</div>
+
+      <hr style="margin:12px 0;">
+      <h4>Recording</h4>
+      <button class="btn-record" id="btn-record" onclick="toggleRecording()">Start Recording</button>
+      <button class="btn-save" id="btn-save" onclick="saveRecording()">Stop &amp; Save WAV</button>
+      <div class="status-box" id="record-status">Recording: Off</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="card">
+      <div class="velocity-panel">
+        <h2>Current Velocity</h2>
+        <span class="velocity-value" id="vel-display">0.00</span>
+        <span class="velocity-unit">m/s</span>
+      </div>
+      <div class="metrics">
+        <div><span class="label">Frequency Shift: </span><span class="val-freq" id="freq-display">0.0 Hz</span></div>
+        <div><span class="label">Signal Strength: </span><span class="val-str" id="str-display">-100 dB</span></div>
+      </div>
+    </div>
+    <div class="card"><div id="velocity-graph" style="height:300px;"></div></div>
+    <div class="card"><div id="spectrum-graph" style="height:250px;"></div></div>
+  </div>
+</div>
+
+<div class="card instructions">
+  <h3>Instructions</h3>
+  <ol>
+    <li>Use <code>generate_audio.py</code> (or any tone generator app) to create an audio file at the matching frequency</li>
+    <li>Transfer the audio file to your phone</li>
+    <li>Set the same center frequency above</li>
+    <li>Click <strong>Start</strong> and allow microphone access</li>
+    <li>Play the audio on your phone and move it towards / away from the computer</li>
+    <li>Positive velocity = approaching, Negative velocity = receding</li>
+  </ol>
+</div>
+
+</div>
+
+<script>
+const SPEED_OF_SOUND = 343.0;
+const MAX_HISTORY = 200;
+
+let audioCtx = null;
+let analyserNode = null;
+let micStream = null;
+let running = false;
+let animFrameId = null;
+
+let velHistory = [];
+let freqShiftHistory = [];
+let timeHistory = [];
+let startTime = 0;
+
+// Recording state
+let isRecording = false;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recorderStream = null;
+
+// ----- Analyzer core -----
+
+async function startAnalyzer() {
+  if (running) return;
+  const centerFreq = Number(document.getElementById('center-freq').value);
+  const fftSize = Number(document.getElementById('fft-size').value);
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    document.getElementById('status').textContent = 'Error: Microphone access denied';
+    return;
+  }
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+  const source = audioCtx.createMediaStreamSource(micStream);
+
+  analyserNode = audioCtx.createAnalyser();
+  analyserNode.fftSize = fftSize;
+  analyserNode.smoothingTimeConstant = 0;
+  source.connect(analyserNode);
+
+  velHistory = [];
+  freqShiftHistory = [];
+  timeHistory = [];
+  startTime = performance.now();
+  running = true;
+  document.getElementById('status').textContent = 'Status: Running';
+
+  tick();
+}
+
+function stopAnalyzer() {
+  running = false;
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  document.getElementById('status').textContent = 'Status: Stopped';
+}
+
+function tick() {
+  if (!running) return;
+  const result = analyze();
+  if (result) updateUI(result);
+  animFrameId = requestAnimationFrame(tick);
+}
+
+function analyze() {
+  const bufLen = analyserNode.frequencyBinCount;
+  const freqData = new Float32Array(bufLen);
+  analyserNode.getFloatFrequencyData(freqData);
+
+  const sampleRate = audioCtx.sampleRate;
+  const binWidth = sampleRate / analyserNode.fftSize;
+  const centerFreq = Number(document.getElementById('center-freq').value);
+
+  const searchWindow = 500; // Hz
+  const minBin = Math.max(0, Math.floor((centerFreq - searchWindow) / binWidth));
+  const maxBin = Math.min(bufLen - 1, Math.ceil((centerFreq + searchWindow) / binWidth));
+
+  let peakVal = -Infinity;
+  let peakBin = minBin;
+  for (let i = minBin; i <= maxBin; i++) {
+    if (freqData[i] > peakVal) { peakVal = freqData[i]; peakBin = i; }
+  }
+
+  let peakFreq = peakBin * binWidth;
+
+  // Parabolic interpolation for sub-bin accuracy
+  if (peakBin > minBin && peakBin < maxBin) {
+    const alpha = freqData[peakBin - 1];
+    const beta  = freqData[peakBin];
+    const gamma = freqData[peakBin + 1];
+    const denom = alpha - 2 * beta + gamma;
+    if (denom !== 0) {
+      const p = 0.5 * (alpha - gamma) / denom;
+      peakFreq = (peakBin + p) * binWidth;
+    }
+  }
+
+  const freqShift = peakFreq - centerFreq;
+  const velocity = freqShift * SPEED_OF_SOUND / centerFreq;
+  const signalStrength = peakVal;
+  const now = (performance.now() - startTime) / 1000;
+
+  velHistory.push(velocity);
+  freqShiftHistory.push(freqShift);
+  timeHistory.push(now);
+  if (velHistory.length > MAX_HISTORY) {
+    velHistory.shift(); freqShiftHistory.shift(); timeHistory.shift();
+  }
+
+  // Build spectrum data for display
+  const specFreqs = [];
+  const specVals = [];
+  const dispMin = Math.max(0, Math.floor((centerFreq - 500) / binWidth));
+  const dispMax = Math.min(bufLen - 1, Math.ceil((centerFreq + 500) / binWidth));
+  for (let i = dispMin; i <= dispMax; i++) {
+    specFreqs.push(i * binWidth);
+    specVals.push(freqData[i]);
+  }
+
+  return { velocity, freqShift, signalStrength, specFreqs, specVals, centerFreq };
+}
+
+// ----- UI Updates -----
+
+function updateUI(r) {
+  document.getElementById('vel-display').textContent = r.velocity.toFixed(2);
+  document.getElementById('freq-display').textContent = r.freqShift.toFixed(1) + ' Hz';
+  document.getElementById('str-display').textContent = r.signalStrength.toFixed(1) + ' dB';
+
+  Plotly.react('velocity-graph', [{
+    x: timeHistory, y: velHistory, mode: 'lines', name: 'Velocity',
+    line: { color: '#3498db', width: 2 }
+  }], {
+    title: 'Velocity over Time', xaxis: { title: 'Time (s)' },
+    yaxis: { title: 'Velocity (m/s)', range: [-5, 5] },
+    margin: { l:50,r:20,t:40,b:40 }, paper_bgcolor:'white', plot_bgcolor:'#f8f9fa',
+    shapes: [{ type:'line', x0:timeHistory[0]||0, x1:timeHistory[timeHistory.length-1]||1,
+               y0:0, y1:0, line:{dash:'dash',color:'gray'} }]
+  }, { responsive: true });
+
+  Plotly.react('spectrum-graph', [{
+    x: r.specFreqs, y: r.specVals, mode: 'lines', name: 'Spectrum',
+    line: { color: '#e74c3c', width: 1 }, fill: 'tozeroy',
+    fillcolor: 'rgba(231,76,60,0.3)'
+  }], {
+    title: 'Frequency Spectrum', xaxis: { title: 'Frequency (Hz)' },
+    yaxis: { title: 'Magnitude (dB)' },
+    margin: { l:50,r:20,t:40,b:40 }, paper_bgcolor:'white', plot_bgcolor:'#f8f9fa',
+    shapes: [{ type:'line', x0:r.centerFreq, x1:r.centerFreq,
+               y0:-150, y1:0, line:{dash:'dash',color:'green'},
+               label:{text:'Expected',position:'top'} }]
+  }, { responsive: true });
+}
+
+// ----- Recording (MediaRecorder -> WAV) -----
+
+function toggleRecording() {
+  if (!running) {
+    document.getElementById('record-status').textContent = 'Error: Start analyzer first!';
+    return;
+  }
+  if (isRecording) {
+    document.getElementById('record-status').textContent = 'Recording: Off';
+    isRecording = false;
+    document.getElementById('btn-record').textContent = 'Start Recording';
+    return;
+  }
+  isRecording = true;
+  recordedChunks = [];
+  document.getElementById('btn-record').textContent = 'Pause Recording';
+  document.getElementById('record-status').textContent = 'Recording: ON (move your phone!)';
+
+  recorderStream = micStream;
+  mediaRecorder = new MediaRecorder(recorderStream);
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.start();
+}
+
+async function saveRecording() {
+  if (!mediaRecorder || recordedChunks.length === 0) {
+    document.getElementById('record-status').textContent = 'No audio recorded';
+    return;
+  }
+  if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+  isRecording = false;
+  document.getElementById('btn-record').textContent = 'Start Recording';
+
+  await new Promise(r => setTimeout(r, 200));
+
+  const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.href = url;
+  a.download = `recorded_doppler_${ts}.webm`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  document.getElementById('record-status').textContent = `Saved: recorded_doppler_${ts}.webm`;
+  recordedChunks = [];
+}
+
+// Init empty plots
+Plotly.newPlot('velocity-graph', [], {
+  title:'Velocity over Time', xaxis:{title:'Time (s)'}, yaxis:{title:'Velocity (m/s)'},
+  margin:{l:50,r:20,t:40,b:40}, paper_bgcolor:'white', plot_bgcolor:'#f8f9fa'
+}, { responsive: true });
+Plotly.newPlot('spectrum-graph', [], {
+  title:'Frequency Spectrum', xaxis:{title:'Frequency (Hz)'}, yaxis:{title:'Magnitude (dB)'},
+  margin:{l:50,r:20,t:40,b:40}, paper_bgcolor:'white', plot_bgcolor:'#f8f9fa'
+}, { responsive: true });
+</script>
+</body>
+</html>
